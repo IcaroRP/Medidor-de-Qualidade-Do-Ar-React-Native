@@ -5,55 +5,67 @@ import { Client } from 'paho-mqtt';
 
 const screenWidth = Dimensions.get('window').width;
 
+// Rótulos CONAMA PM₂.₅ para IQ ∈ [0, 160]
+function qualityLabel(iq) {
+  if (iq <= 25)   return 'Ótimo';
+  if (iq <= 50)   return 'Bom';
+  if (iq <= 75)   return 'Moderado';
+  if (iq <= 100)  return 'Ruim';
+                   return 'Péssimo';
+}
+
+// Cores para cada faixa
+function qualityColor(iq) {
+  if (iq <= 25)   return '#2ecc71'; // verde
+  if (iq <= 50)   return '#27ae60'; // verde escuro
+  if (iq <= 75)   return '#f1c40f'; // amarelo
+  if (iq <= 100)  return '#e67e22'; // laranja
+                   return '#c0392b'; // vermelho
+}
+
 export default function App() {
-  const [airQuality, setAirQuality] = useState(50);
-  const [data, setData] = useState([50, 60, 55]);
+  const [airQuality, setAirQuality] = useState(80);
+  const [data, setData] = useState([80, 80, 80, 80, 80, 80, 80, 80, 80, 80]);
 
   useEffect(() => {
-    // Cria o cliente MQTT
-    const clientID = "react-native-" + Math.floor(Math.random() * 10000);
-    const client = new Client(
-      'broker.hivemq.com',
-      8000,
-      clientID
-    );
+    // Conectar no HiveMQ via WebSocket
+    const clientID = 'react-native-' + Math.random().toString(16).substr(2, 8);
+    const client = new Client('broker.hivemq.com', 8000, clientID);
 
     client.onConnectionLost = (responseObject) => {
       if (responseObject.errorCode !== 0) {
-        console.log('Conexão perdida:', responseObject.errorMessage);
+        console.log('MQTT Connection lost:', responseObject.errorMessage);
       }
     };
 
     client.onMessageArrived = (message) => {
-      console.log('Mensagem recebida:', message.payloadString);
-      const newAQI = parseFloat(message.payloadString);
-      if (!isNaN(newAQI)) {
-        setAirQuality(newAQI);
-        setData((prev) => [...prev.slice(-9), newAQI]); // mantém os últimos 10
+      const newIQ = parseInt(message.payloadString, 10);
+      if (!isNaN(newIQ)) {
+        setAirQuality(newIQ);
+        setData(prev => [...prev.slice(-9), newIQ]);
       }
     };
 
     client.connect({
       onSuccess: () => {
-        console.log('Conectado ao HiveMQ!');
+        console.log('Conectado ao HiveMQ');
         client.subscribe('sensor/qualidade_ar');
       },
       useSSL: false,
-      onFailure: (err) => {
-        console.log('Erro de conexão:', err);
-      }
+      onFailure: (err) => console.log('Erro de conexão MQTT:', err)
     });
 
-    return () => {
-      client.disconnect();
-    };
+    return () => client.disconnect();
   }, []);
+
+  const label = qualityLabel(airQuality);
+  const color = qualityColor(airQuality);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>🌫️ Qualidade do Ar</Text>
-      <Text style={[styles.status, { color: airQuality > 100 ? 'red' : 'green' }]}>
-        {airQuality > 100 ? 'Ruim' : 'Boa'} - AQI: {airQuality}
+      <Text style={[styles.status, { color }]}>
+        {label} — PM₂.₅: {airQuality} / 160
       </Text>
 
       <LineChart
@@ -63,11 +75,19 @@ export default function App() {
         }}
         width={screenWidth - 32}
         height={220}
+        yAxisSuffix=""
+        yAxisInterval={20}
         chartConfig={{
           backgroundGradientFrom: '#4f46e5',
           backgroundGradientTo: '#9333ea',
-          color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+          decimalPlaces: 0,
+          color: () => '#fff',
           labelColor: () => '#fff',
+          propsForDots: {
+            r: '4',
+            strokeWidth: '2',
+            stroke: '#fff'
+          }
         }}
         style={styles.chart}
         bezier
@@ -91,7 +111,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   status: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     marginBottom: 24,
   },
