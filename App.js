@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, ScrollView } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
+import { Client } from 'paho-mqtt';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -9,12 +10,43 @@ export default function App() {
   const [data, setData] = useState([50, 60, 55]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const newAQI = Math.floor(Math.random() * 200);
-      setAirQuality(newAQI);
-      setData((prev) => [...prev.slice(-9), newAQI]); // últimos 10 pontos
-    }, 3000);
-    return () => clearInterval(interval);
+    // Cria o cliente MQTT
+    const clientID = "react-native-" + Math.floor(Math.random() * 10000);
+    const client = new Client(
+      'broker.hivemq.com',
+      8000,
+      clientID
+    );
+
+    client.onConnectionLost = (responseObject) => {
+      if (responseObject.errorCode !== 0) {
+        console.log('Conexão perdida:', responseObject.errorMessage);
+      }
+    };
+
+    client.onMessageArrived = (message) => {
+      console.log('Mensagem recebida:', message.payloadString);
+      const newAQI = parseFloat(message.payloadString);
+      if (!isNaN(newAQI)) {
+        setAirQuality(newAQI);
+        setData((prev) => [...prev.slice(-9), newAQI]); // mantém os últimos 10
+      }
+    };
+
+    client.connect({
+      onSuccess: () => {
+        console.log('Conectado ao HiveMQ!');
+        client.subscribe('sensor/qualidade_ar');
+      },
+      useSSL: false,
+      onFailure: (err) => {
+        console.log('Erro de conexão:', err);
+      }
+    });
+
+    return () => {
+      client.disconnect();
+    };
   }, []);
 
   return (
